@@ -207,58 +207,39 @@ static void cancel_previous_multi()
   ftpfs.attached_to_multi = 0;  
 }
 
-//Code from stackoverflow
-char* replace(
-    char const * const original,
-    char const * const pattern,
-    char const * const replacement
-){
-	size_t const replen = strlen(replacement);
-	size_t const patlen = strlen(pattern);
-	size_t const orilen = strlen(original);
+char* urlencode(char const * const original)
+{
+  pthread_mutex_lock(&ftpfs.lock);
+  char * encoded = curl_easy_escape(ftpfs.connection, original, 0);
+  pthread_mutex_unlock(&ftpfs.lock);
 
-	size_t patcnt = 0;
-	const char * oriptr;
-	const char * patloc;
+  if (encoded == NULL)
+    return NULL;
 
-	// find how many times the pattern occurs in the original string
-	for (oriptr = original; patloc = strstr(oriptr, pattern); oriptr = patloc + patlen)
-		patcnt++;
-	{ 
-		// allocate memory for the new string
-		size_t const retlen = orilen + patcnt * (replen - patlen);
-		char * const returned = (char *) malloc( sizeof(char) * (retlen + 1) );
+  size_t len = strlen(encoded);
+  char * const returned = (char *) malloc( sizeof(char) * (len + 1));
 
-		if (returned != NULL){
-			// copy the original string, 
-			// replacing all the instances of the pattern
-			char * retptr = returned;
-			for (oriptr = original; patloc = strstr(oriptr, pattern); oriptr = patloc + patlen){
-				size_t const skplen = patloc - oriptr;
-				// copy the section until the occurence of the pattern
-				strncpy(retptr, oriptr, skplen);
-				retptr += skplen;
-				// copy the replacement 
-				strncpy(retptr, replacement, replen);
-				retptr += replen;
-			}
-			// copy the rest of the string.
-			strcpy(retptr, oriptr);
-		}
-		return returned;
-	}
-}
+  if (returned != NULL){
+    size_t out_pos = 0;
+    for (int in_pos=0; in_pos < len; in_pos++) {
+      if (encoded[in_pos] == '%'
+        && encoded[in_pos+1] == '2'
+        && (encoded[in_pos+2] == 'F' || encoded[in_pos+2] == 'f')
+      )
+      {
+        returned[out_pos++] = '/';
+        in_pos+=2;
+      }
+      else
+      {
+        returned[out_pos++] = encoded[in_pos];
+      }
+      returned[out_pos] = '\0';
+    }
+    curl_free(encoded);
+  }
 
-char* urlencode(char const * const original){
-	//Always process % first
-	char* tmp_percent = replace(original, "%", "%25");
-	char* tmpsharp = replace(tmp_percent, "#", "%23");
-	free(tmp_percent);
-	char* tmpspace = replace(tmpsharp, " ", "%20");
-	free(tmpsharp);
-	char* tmp_dollar = replace(tmpspace, "$", "%24");
-	free(tmpspace);
-	return(tmp_dollar);
+  return returned;
 }
 
 static int op_return(int err, char * operation)
